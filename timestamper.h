@@ -1,13 +1,18 @@
-#ifndef TIMESTAMPER_H__
-#define TIMESTAMPER_H__
-#include <chrono>
-#include <cstdint>
-#include <vector>
-#include <iostream>
+#ifndef TIMESTAMP_H__
+#define TIMESTAMP_H__
+#include <cstdint> // std::uint32_t
+#include <cstdio>  // std::fprintf
+#include <cstdlib> // std::size_t
+
+#include <algorithm> // std::sort
+#include <chrono>    // std::chrono
 #include <numeric>
-#include <algorithm>
+#include <string>
+#include <vector>
 
 namespace timestamp {
+using std::uint32_t;
+using std::size_t;
 using hrc = std::chrono::high_resolution_clock;
 
 template<typename Clock>
@@ -24,10 +29,12 @@ struct TimeStamper {
         v_t time;
         Event(std::string l, v_t t): label(l), time(t) {}
     };
-    static auto now() {return std::chrono::high_resolution_clock::now();}
+    static auto now() {return hrc::now();}
     std::vector<Event> events;
-    bool emit_on_close_ = false;
-    TimeStamper(std::string msg, bool emit_on_close=true): events({Event{msg, now()}}), emit_on_close_(emit_on_close) {}
+    bool emit_on_close_ = false, emit_as_tsv_;
+    TimeStamper(std::string msg, bool emit_as_tsv=true, bool emit_on_close=true):
+        events({Event{msg, now()}}), emit_on_close_(emit_on_close), emit_as_tsv_(emit_as_tsv)
+    {}
     TimeStamper() {}
     void restart(std::string label) {
         events = {Event{label, now()}};
@@ -49,45 +56,35 @@ struct TimeStamper {
         }
         return ret;
     }
-    static constexpr const char *int2suf(std::ptrdiff_t i) {
-        switch(i) {
-        case 1: return "st";
-        case 2: return "nd";
-        case 3: return "rd";
-        case 0: case 4: case 5: case 6: case 7: case 8: case 9:
-        case 10: case 11: case 12: case 13: case 14: case 15:
-        return "th";
-        default: {
-            switch(i % 10) {
-                case 0: case 4: case 5: case 6: case 7: case 8: case 9: return "th";
-                case 1: return "st"; case 2: return "nd"; case 3: return "rd";
-                default: __builtin_unreachable();
-            }
-        }
-        }
-    }
     void emit() const {
         auto ivls = to_intervals();
+        std::vector<double> fractions(ivls.size());
         auto total_time = std::accumulate(ivls.begin(), ivls.end(), 0., [](auto x, const auto &y) {return x + y.second;});
         auto prod = 100. / total_time;
-        std::fprintf(stderr, "#Event\tTime (ms)\t%% of total (%gms)\n", total_time);
-        for(const auto &ivl: ivls) {
-            std::fprintf(stderr, "%s\t%g\t%%%0.10g\n", ivl.first.data(), ivl.second, ivl.second * prod);
-        }
+        for(size_t i = 0; i < ivls.size(); ++i) fractions[i] = prod * ivls[i].second;
         std::vector<unsigned> idx(ivls.size());
         std::iota(idx.data(), idx.data() + ivls.size(), 0);
         std::sort(idx.begin(), idx.end(), [&](auto x, auto y) {return ivls[x].second > ivls[y].second;});
-        
-        std::fprintf(stderr, "##Event\tTime (ms)\t%% of total (%gms)\n", total_time);
-        for(size_t i = 0; i < ivls.size(); ++i) {
-            std::fprintf(stderr, "%d/%s is %zu%s most expensive %u with %%%0.12g of total time\n",
-                         idx[i], events[idx[i]].label.data(), i + 1, int2suf(i + 1), idx[i], ivls[idx[i]].second * prod);
+        if(emit_as_tsv_) {
+            std::fprintf(stderr, "##Total: %gms\n#EventID\tEventName\tRank\tTotal\tFraction\n", total_time);
+            for(unsigned i = 0; i < ivls.size(); ++i) {
+                auto eid = idx[i];
+                auto t = ivls[eid].second;
+                std::fprintf(stderr, "%d\t%s\t%d\t%0.12gms\t%%%0.12g\n", eid, events[eid].label.data(), i + 1, t, t * prod);
+            }
+        } else {
+            for(const auto &ivl: ivls) {
+                std::fprintf(stderr, "Event '%s' took %gms, %%%g of total %gms\n", ivl.first.data(), ivl.second, ivl.second * prod, total_time);
+            }
+            for(size_t i = 0; i < ivls.size(); ++i) {
+                std::fprintf(stderr, "%d/%s is %zu{st/th/nd} most expensive %u with %%%g of total time\n",
+                             idx[i], events[idx[i]].label.data(), i + 1, idx[i], ivls[idx[i]].second * prod);
+            }
         }
     }
 };
 
 } // timestamp
-
 
 #ifdef TIMESTAMP_MAIN
 #include <memory>
@@ -116,4 +113,4 @@ int main() {
 
 #endif
 
-#endif /*TIMESTAMPER_H__ */
+#endif /*TIMESTAMP_H__ */
