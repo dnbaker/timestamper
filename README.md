@@ -29,3 +29,20 @@ int main() {
 }
 
 ```
+
+Output might be something like:
+
+```
+##Total: 653.164ms
+#EventID	EventName	Rank	Total	Fraction
+3	Sort by lexicographic order	1	434.267ms	%66.4866710351
+4	Sort by reverse lexicographic order	2	113.212ms	%17.3328597412
+2	Set strings to be integer encoding	3	88.383ms	%13.5315173525
+1	Allocate vector of strings	4	12.461ms	%1.90779038649
+5	Destroy strings	5	4.835ms	%0.740242879277
+0	time things	6	0.006ms	%0.00091860543447
+6	Stack unwinding	7	0ms	%0
+```
+# Motivation
+
+On OSX, `-pg`-based profiling does not work, and standard profilers typically have function-level runtime analysis rather than task-level. This tools solves both problems.
